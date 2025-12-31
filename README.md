@@ -1,6 +1,6 @@
 # Blocket Bot - Testpanel
 
-En lokal Streamlit-baserad testpanel för att söka efter annonser på Blocket, hantera bevakningar och exportera resultat som normaliserad JSON.
+En lokal Streamlit-baserad testpanel för att söka efter annonser på Blocket, hantera bevakningar, **analysera marknadspriser** och hitta de bästa köpen.
 
 ## 🚀 Snabbstart
 
@@ -50,6 +50,14 @@ streamlit run app.py
 Appen öppnas automatiskt i din webbläsare på `http://localhost:8501`.
 
 ## 📋 Funktioner
+
+### 🎯 Evaluering (NY!)
+- **Marknadsanalys**: Analyserar alla annonser för att hitta de bästa köpen
+- **Prisvärdhet**: Jämför pris mot median i samma kategori (modell, lagring, skick)
+- **Preferensmatch**: Filtrerar baserat på dina krav (skick, sprickor, batteri)
+- **Riskindikatorer**: Varnar för misstänkt låga priser, brådska-språk, etc.
+- **Extraherade attribut**: Automatisk extraktion av modell, lagring, skick, batterihälsa
+- **Score breakdown**: Transparent poängsättning per annons
 
 ### 🔍 Sökning
 - Fri textsökning (t.ex. "iPhone 15")
