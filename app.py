@@ -41,25 +41,186 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS for better styling
+# Custom CSS for premium dark theme styling
 st.markdown("""
 <style>
+    /* Import Google Font */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    /* Global styles */
     .stApp {
-        max-width: 1400px;
-        margin: 0 auto;
+        font-family: 'Inter', sans-serif;
     }
-    .listing-card {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border: 1px solid #e0e0e0;
+    
+    /* Header styling */
+    h1 {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700;
         margin-bottom: 0.5rem;
     }
-    .new-listing {
-        border-left: 4px solid #4CAF50;
+    
+    h2, h3 {
+        color: #e0e0e0;
+        font-weight: 600;
     }
-    .seen-listing {
-        opacity: 0.7;
+    
+    /* Card styling with glassmorphism */
+    .deal-card {
+        background: linear-gradient(135deg, rgba(30, 30, 46, 0.9) 0%, rgba(45, 45, 68, 0.9) 100%);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+    
+    .deal-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(102, 126, 234, 0.2);
+    }
+    
+    /* Score badges */
+    .score-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 1.2rem;
+    }
+    
+    .score-excellent {
+        background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
+        color: white;
+    }
+    
+    .score-good {
+        background: linear-gradient(135deg, #ffc107 0%, #ffca28 100%);
+        color: #1a1a2e;
+    }
+    
+    .score-poor {
+        background: linear-gradient(135deg, #ff5252 0%, #ff1744 100%);
+        color: white;
+    }
+    
+    /* Metric cards */
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 1rem;
+        text-align: center;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #667eea;
+    }
+    
+    .metric-label {
+        font-size: 0.85rem;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    /* Risk indicators */
+    .risk-low {
+        color: #00c853;
+    }
+    
+    .risk-medium {
+        color: #ffc107;
+    }
+    
+    .risk-high {
+        color: #ff5252;
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Progress/loading animation */
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+    
+    .loading {
+        animation: pulse 1.5s infinite;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    }
+    
+    /* Table styling */
+    .dataframe {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    /* Tags/chips */
+    .tag {
+        display: inline-block;
+        background: rgba(102, 126, 234, 0.2);
+        color: #667eea;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .tag-warning {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+    }
+    
+    .tag-success {
+        background: rgba(0, 200, 83, 0.2);
+        color: #00c853;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+    }
+    
+    /* Input fields */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+    }
+    
+    /* Top pick ranking */
+    .rank-1 { color: #ffd700; }  /* Gold */
+    .rank-2 { color: #c0c0c0; }  /* Silver */
+    .rank-3 { color: #cd7f32; }  /* Bronze */
 </style>
 """, unsafe_allow_html=True)
 
