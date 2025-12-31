@@ -42,12 +42,13 @@ class AttributePack(ABC):
         r"\bsönder\b": Condition.DEFECT,
     }
 
-    def extract(self, listing: dict) -> ExtractedAttributes:
+    def extract(self, listing: dict, use_llm_fallback: bool = False) -> ExtractedAttributes:
         """
         Extract attributes from a listing.
         
         Args:
             listing: Normalized listing dict with title, raw, etc.
+            use_llm_fallback: If True, use LLM when regex extraction gives low confidence
             
         Returns:
             ExtractedAttributes with all found attributes
@@ -60,7 +61,7 @@ class AttributePack(ABC):
         # Combine title and description for extraction
         text = f"{title} {description}".lower()
         
-        # Extract all attributes
+        # Extract all attributes with regex
         attributes = self._extract_attributes(text, title, raw)
         
         # Build result
@@ -94,6 +95,32 @@ class AttributePack(ABC):
         # Compute overall confidence
         key_found = sum(1 for a in attributes if a.name in self.KEY_ATTRIBUTES and a.value is not None)
         result.extraction_confidence = key_found / len(self.KEY_ATTRIBUTES) if self.KEY_ATTRIBUTES else 0.5
+        
+        # LLM fallback if confidence is low and important attributes missing
+        if use_llm_fallback and result.extraction_confidence < 0.5:
+            try:
+                from ..llm_client import LLMClient
+                llm = LLMClient()
+                llm_attrs = llm.extract_attributes(title, description)
+                
+                # Merge LLM results for missing fields
+                for attr in llm_attrs:
+                    if attr.name == "model_variant" and not result.model_variant:
+                        result.model_variant = attr.value
+                        result.attributes.append(attr)
+                    elif attr.name == "storage_gb" and not result.storage_gb:
+                        result.storage_gb = int(attr.value) if attr.value else None
+                        result.attributes.append(attr)
+                    elif attr.name == "battery_health" and result.battery_health is None:
+                        result.battery_health = int(attr.value) if attr.value else None
+                        result.attributes.append(attr)
+                    elif attr.name == "has_cracks" and result.has_cracks is None:
+                        result.has_cracks = attr.value
+                        result.attributes.append(attr)
+                
+                result.llm_fallback_used = True
+            except Exception:
+                pass  # Silently fail if LLM is not available
         
         return result
 
