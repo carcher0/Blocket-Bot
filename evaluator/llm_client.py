@@ -38,7 +38,7 @@ def load_api_key() -> str:
 class LLMClient:
     """OpenAI LLM client with strict JSON validation."""
 
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-5.2"):
         self.api_key = load_api_key()
         if not self.api_key:
             raise ValueError("No OpenAI API key found. Add it to key.txt or set OPENAI_API_KEY.")
