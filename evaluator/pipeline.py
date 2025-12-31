@@ -1,5 +1,6 @@
 """
 Main evaluation pipeline: Orchestrates all evaluation steps.
+AI-First approach: Filter irrelevant listings BEFORE scoring.
 """
 from typing import Optional
 from datetime import datetime
@@ -13,8 +14,9 @@ from .schemas import (
     CompsGroup,
     ClarifyingQuestion,
     ProductFamily,
+    ClusterInfo,
 )
-from .query_analyzer import analyze_query, should_filter_accessories
+from .ai_filter import filter_and_prepare_listings, QueryUnderstanding
 from .attribute_packs.phone_pack import PhonePack
 from .comps import build_comps_groups, find_comps_for_listing
 from .scoring import score_listing
@@ -31,43 +33,72 @@ def run_evaluation(
     listings: list[dict],
     preferences: dict,
     watch_id: Optional[str] = None,
-    filter_accessories: bool = True,
-    min_comps_sample: int = 5,
+    use_ai_filter: bool = True,
+    min_comps_sample: int = 3,  # Lowered for better matching
     top_k: int = 10,
 ) -> EvaluationResult:
     """
-    Run the full evaluation pipeline on a set of listings.
+    Run the full AI-first evaluation pipeline.
+    
+    NEW FLOW:
+    1. AI understands query
+    2. AI filters irrelevant listings (cases, services, wrong models)
+    3. Deduplicate
+    4. Extract attributes
+    5. Build comps from ONLY relevant listings
+    6. Score and rank
     
     Args:
         query: Search query string
         listings: Normalized listings from BlocketAPI
         preferences: User preferences dict
         watch_id: Optional watch ID for tracking
-        filter_accessories: Whether to filter out accessory listings
+        use_ai_filter: Whether to use GPT-5.2 for relevance filtering
         min_comps_sample: Minimum sample size for valid comps
         top_k: Number of top results to include
         
     Returns:
         EvaluationResult with ranked listings and analysis
     """
-    # Step 1: Query Analysis
-    probe_sample = listings[:50] if len(listings) > 50 else listings
-    query_analysis = analyze_query(query, probe_sample)
+    original_count = len(listings)
     
-    # Filter accessories if requested
-    working_listings = listings
-    if filter_accessories:
-        working_listings = should_filter_accessories(listings)
+    # ====== STEP 1-3: AI FILTERING (NEW) ======
+    if use_ai_filter:
+        # AI understands query, filters irrelevant, deduplicates
+        working_listings, query_understanding = filter_and_prepare_listings(listings, query)
+    else:
+        # Fallback: basic filtering
+        working_listings = listings
+        query_understanding = QueryUnderstanding(
+            product_type="other",
+            brand=None,
+            model_line=query,
+            model_variant=None,
+            must_match_keywords=query.lower().split(),
+            exclude_keywords=[],
+            expected_price_min=None,
+            expected_price_max=None,
+        )
     
-    filtered_out = len(listings) - len(working_listings)
+    filtered_out = original_count - len(working_listings)
+    
+    # Build query analysis from understanding
+    query_analysis = QueryAnalysisResult(
+        query=query,
+        product_family=_map_product_type(query_understanding.product_type),
+        confidence=0.9 if use_ai_filter else 0.5,
+        key_attributes=["model_variant", "storage_gb", "condition", "battery_health"],
+        clusters=[],
+        is_ambiguous=False,
+        probe_sample_size=original_count,
+    )
     
     # Get appropriate attribute pack
     pack = ATTRIBUTE_PACKS.get(query_analysis.product_family)
     if not pack:
-        # Default to phone pack for now
         pack = PhonePack()
     
-    # Step 2: Attribute Extraction
+    # ====== STEP 4: ATTRIBUTE EXTRACTION ======
     attributes_map: dict[str, ExtractedAttributes] = {}
     canonical_keys: dict[str, CanonicalKey] = {}
     
@@ -76,11 +107,12 @@ def run_evaluation(
         if not listing_id:
             continue
         
-        attrs = pack.extract(listing)
+        # Try LLM fallback for better extraction
+        attrs = pack.extract(listing, use_llm_fallback=True)
         attributes_map[listing_id] = attrs
         canonical_keys[listing_id] = pack.create_canonical_key(attrs)
     
-    # Step 3-4: Build Comps Groups
+    # ====== STEP 5: BUILD COMPS ======
     comps_groups = build_comps_groups(
         working_listings,
         attributes_map,
@@ -88,7 +120,7 @@ def run_evaluation(
         min_sample=min_comps_sample,
     )
     
-    # Step 5-6: Score each listing
+    # ====== STEP 6: SCORE EACH LISTING ======
     scored_listings: list[tuple[dict, ExtractedAttributes, Optional[CompsGroup], float]] = []
     
     for listing in working_listings:
@@ -128,7 +160,6 @@ def run_evaluation(
     for rank, (listing, attrs, comps, final_score) in enumerate(scored_listings[:top_k], 1):
         listing_id = str(listing.get("listing_id", ""))
         
-        # Re-compute scores for details
         scores = score_listing(listing, attrs, comps, preferences)
         
         # Generate checklist from missing info
@@ -137,7 +168,6 @@ def run_evaluation(
         for attr in missing:
             checklist.append(f"Fråga säljaren om: {attr.replace('_', ' ')}")
         
-        # Get price
         price_data = listing.get("price", {})
         asking_price = price_data.get("amount") if isinstance(price_data, dict) else None
         
@@ -155,22 +185,14 @@ def run_evaluation(
         )
         ranked_listings.append(ranked_listing)
     
-    # Generate clarifying questions if ambiguous
-    questions: list[ClarifyingQuestion] = []
-    if query_analysis.is_ambiguous and query_analysis.clarifying_question:
-        questions.append(ClarifyingQuestion(
-            question=query_analysis.clarifying_question,
-            options=query_analysis.clarifying_options,
-            reason="Sökningen innehåller blandade produkttyper",
-            information_gain=0.8,
-        ))
-    
     # Data quality notes
     data_quality_notes = []
+    if use_ai_filter:
+        data_quality_notes.append(f"✅ AI filtrerade bort {filtered_out} irrelevanta annonser")
     if len(comps_groups) == 0:
-        data_quality_notes.append("Kunde inte bygga jämförelsegrupper (för få annonser eller för olika)")
-    if filtered_out > len(listings) * 0.5:
-        data_quality_notes.append(f"Många annonser filtrerades bort ({filtered_out} av {len(listings)})")
+        data_quality_notes.append("⚠️ Få jämförbara annonser - prisdata osäker")
+    if len(working_listings) < 5:
+        data_quality_notes.append("⚠️ Endast få relevanta annonser hittades")
     
     return EvaluationResult(
         query=query,
@@ -181,9 +203,20 @@ def run_evaluation(
         total_evaluated=len(scored_listings),
         filtered_out=filtered_out,
         comps_groups=comps_groups,
-        questions=questions,
+        questions=[],
         data_quality_notes=data_quality_notes,
     )
+
+
+def _map_product_type(product_type: str) -> ProductFamily:
+    """Map AI product type string to ProductFamily enum."""
+    mapping = {
+        "smartphone": ProductFamily.PHONE,
+        "laptop": ProductFamily.LAPTOP,
+        "tablet": ProductFamily.TABLET,
+        "camera": ProductFamily.CAMERA,
+    }
+    return mapping.get(product_type, ProductFamily.UNKNOWN)
 
 
 def evaluate_single_listing(
