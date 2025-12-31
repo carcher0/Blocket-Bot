@@ -1,11 +1,12 @@
 """
 OpenAI LLM client with strict JSON validation.
-Uses GPT-4o for attribute extraction and explanations.
+Uses GPT-5.2 for attribute extraction and explanations.
 """
 import json
 import os
 from typing import Any, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
@@ -18,21 +19,25 @@ from .schemas import (
     ProductFamily,
 )
 
+# Load .env file
+load_dotenv()
+
 
 def load_api_key() -> str:
-    """Load OpenAI API key from key.txt or environment."""
-    # Try key.txt first
-    key_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "key.txt")
-    if os.path.exists(key_file):
-        with open(key_file, "r") as f:
-            content = f.read().strip()
-            # Parse "api key = ..." format
-            if "=" in content:
-                return content.split("=", 1)[1].strip()
-            return content
+    """Load OpenAI API key from environment variable (.env file)."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
     
-    # Fall back to environment variable
-    return os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        # Fallback to key.txt for backwards compatibility
+        key_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "key.txt")
+        if os.path.exists(key_file):
+            with open(key_file, "r") as f:
+                content = f.read().strip()
+                if "=" in content:
+                    return content.split("=", 1)[1].strip()
+                return content
+    
+    return api_key
 
 
 class LLMClient:

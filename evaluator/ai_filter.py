@@ -116,7 +116,8 @@ def quick_filter_listings(
 ) -> list[dict]:
     """
     Fast pre-filter using rules BEFORE AI.
-    Removes obvious non-matches to save API calls.
+    Only removes OBVIOUS non-matches to save API calls.
+    Should be LESS aggressive than AI filter.
     """
     filtered = []
     
@@ -127,17 +128,7 @@ def quick_filter_listings(
         if isinstance(price_data, dict):
             price = price_data.get("amount")
         
-        # Check exclude keywords
-        is_excluded = False
-        for kw in query_understanding.exclude_keywords:
-            if kw.lower() in title:
-                is_excluded = True
-                break
-        
-        if is_excluded:
-            continue
-        
-        # Check if it's a service
+        # Only exclude OBVIOUS service listings (not products)
         is_service = False
         for kw in SERVICE_KEYWORDS:
             if kw.lower() in title:
@@ -147,21 +138,25 @@ def quick_filter_listings(
         if is_service:
             continue
         
-        # Price sanity check
+        # Only exclude if title is JUST an accessory word (not product + accessory)
+        is_pure_accessory = False
+        accessory_only_keywords = ["skal", "fodral", "laddare", "skärmskydd", "mobilfodral"]
+        for kw in accessory_only_keywords:
+            # If title starts with accessory word or is very short with just accessory
+            if title.startswith(kw) or (len(title) < 30 and kw in title and "iphone" not in title and "samsung" not in title):
+                is_pure_accessory = True
+                break
+        
+        if is_pure_accessory:
+            continue
+        
+        # Price sanity check - only reject VERY low prices
         if price and query_understanding.expected_price_min:
-            if price < query_understanding.expected_price_min * 0.1:
-                # Price is less than 10% of expected minimum - probably not the product
+            if price < 200:  # Less than 200 kr - definitely not a phone
                 continue
         
-        # Must have at least some query keywords
-        if query_understanding.must_match_keywords:
-            has_keyword = False
-            for kw in query_understanding.must_match_keywords[:2]:  # Check first 2 keywords
-                if kw.lower() in title:
-                    has_keyword = True
-                    break
-            if not has_keyword:
-                continue
+        # Don't require keyword matching here - let AI decide
+        # This was too aggressive before
         
         filtered.append(listing)
     
@@ -172,7 +167,7 @@ def ai_filter_listings(
     listings: list[dict],
     query: str,
     query_understanding: QueryUnderstanding,
-    batch_size: int = 20,
+    batch_size: int = 25,  # Increased batch size
 ) -> list[dict]:
     """
     Use AI to filter listings for relevance.
@@ -183,6 +178,10 @@ def ai_filter_listings(
     
     llm = LLMClient()
     relevant_listings = []
+    
+    # Build context about what we're looking for
+    model_info = query_understanding.model_line or query
+    variant_info = query_understanding.model_variant or ""
     
     # Process in batches
     for i in range(0, len(listings), batch_size):
@@ -202,32 +201,40 @@ def ai_filter_listings(
                 "price": price,
             })
         
-        system_prompt = f"""Du filtrerar Blocket-annonser för relevans.
+        # Improved prompt - less aggressive
+        system_prompt = f"""Du är expert på att filtrera Blocket-annonser.
 
-Användaren söker: "{query}"
-Förväntat: {query_understanding.model_line or query} {query_understanding.model_variant or ''}
-Förväntad prisintervall: {query_understanding.expected_price_min or '?'} - {query_understanding.expected_price_max or '?'} kr
+SÖKNING: "{query}"
 
-För varje annons, avgör:
-1. Är detta EXAKT den produkt som söks? (inte tillbehör, inte annan modell)
-2. Är detta till SALU? (inte "köpes", inte reparationstjänst)
-3. Är priset rimligt för produkten?
+UPPGIFT: Avgör för varje annons om den är RELEVANT för sökningen.
 
-Svara ENDAST med JSON:
+RELEVANT = Sant om:
+✅ Annonsen säljer en {model_info} {variant_info} telefon/produkt
+✅ Annonsen säljer en variant av samma modell-linje (t.ex. iPhone 15 / 15 Pro / 15 Pro Max för "iPhone 15" sökning)  
+✅ Priset är rimligt för en telefon/produkt (ej under 500 kr)
+
+RELEVANT = Falskt om:
+❌ Annonsen är för TILLBEHÖR (skal, fodral, laddare, kablar, skärmskydd)
+❌ Annonsen är för REPARATION/SERVICE (byt skärm, laga telefon)
+❌ Annonsen är för TOMMA LÅDOR/KARTONGER
+❌ Annonsen är "KÖPES"/"SÖKES" (inte säljes)
+❌ Annonsen är för en HELT annan produkt (t.ex. iPhone 12 när sökning är iPhone 15)
+❌ Annonsen är för AirPods, hörlurar, eller andra tillbehör
+
+VIKTIGT: 
+- Om du är OSÄKER, sätt relevant=true (bättre att inkludera för mycket)
+- iPhone 15 Pro MAX får inkluderas även för sökning "iPhone 15 Pro Max" 
+- Samma modell-serie ÄR relevant (iPhone 15 alla varianter)
+
+Svara med JSON:
 {{
     "results": [
         {{"id": "123", "relevant": true, "reason": "iPhone 15 Pro Max till salu"}},
-        {{"id": "456", "relevant": false, "reason": "Detta är ett skal, inte en telefon"}}
+        {{"id": "456", "relevant": false, "reason": "Skal/tillbehör"}}
     ]
-}}
+}}"""
 
-VIKTIGT:
-- "iPhone 15" matchar INTE "iPhone 15 Pro Max" om användaren söker Pro Max
-- Reparationstjänster är INTE relevanta
-- Tillbehör (skal, laddare, kablar) är INTE relevanta
-- Tomma lådor är INTE relevanta"""
-
-        user_prompt = f"Annonser att filtrera:\n{json.dumps(batch_info, ensure_ascii=False, indent=2)}"
+        user_prompt = f"Filtrera dessa annonser:\n{json.dumps(batch_info, ensure_ascii=False, indent=2)}"
         
         try:
             response = llm._call(
@@ -238,11 +245,12 @@ VIKTIGT:
             data = json.loads(response)
             
             # Map results back to listings
-            results_map = {r["id"]: r["relevant"] for r in data.get("results", [])}
+            results_map = {str(r["id"]): r["relevant"] for r in data.get("results", [])}
             
             for listing in batch:
                 listing_id = str(listing.get("listing_id", ""))
-                if results_map.get(listing_id, False):
+                # Default to True if not in results (fail open)
+                if results_map.get(listing_id, True):
                     relevant_listings.append(listing)
                     
         except Exception as e:
