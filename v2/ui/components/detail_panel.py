@@ -4,7 +4,7 @@ Detail panel component - full listing detail view.
 import streamlit as st
 from typing import Optional
 
-from ...models.scoring import RankedListing
+from v2.models.scoring import RankedListing
 
 
 def render_detail_panel(result: Optional[RankedListing]):

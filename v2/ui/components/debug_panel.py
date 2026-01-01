@@ -5,9 +5,9 @@ import json
 import streamlit as st
 from typing import Optional
 
-from ...models.discovery import DomainDiscoveryOutput
-from ...models.preferences import PreferenceProfile
-from ...models.export import FullRunExport
+from v2.models.discovery import DomainDiscoveryOutput
+from v2.models.preferences import PreferenceProfile
+from v2.models.export import FullRunExport
 
 
 def render_debug_panel(

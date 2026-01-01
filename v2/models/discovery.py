@@ -42,6 +42,21 @@ class InferredDomain(BaseModel):
     domain_label: str = Field(description="e.g. 'smartphone', 'bicycle', 'furniture'")
     confidence: float = Field(ge=0, le=1)
     subcategory: Optional[str] = Field(default=None, description="More specific category")
+    
+    # Clarification when uncertain
+    clarifying_question: Optional[str] = Field(
+        default=None,
+        description="Question to ask user if confidence < 0.7"
+    )
+    clarifying_options: list[str] = Field(
+        default_factory=list,
+        description="Suggested options for clarification"
+    )
+    
+    @property
+    def needs_clarification(self) -> bool:
+        """Check if we need to ask the user for clarification."""
+        return self.confidence < 0.7 and self.clarifying_question is not None
 
 
 class DomainDiscoveryOutput(BaseModel):

@@ -122,6 +122,13 @@ def inject_custom_css():
         font-size: 0.9rem;
     }}
     
+    .result-card .description-preview {{
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin: 0.5rem 0;
+        line-height: 1.4;
+    }}
+    
     /* Score badges */
     .score-badge {{
         display: inline-flex;

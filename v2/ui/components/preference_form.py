@@ -4,8 +4,8 @@ Preference form component - dynamic preference wizard.
 import streamlit as st
 from typing import Any
 
-from ...models.discovery import DomainDiscoveryOutput, PreferenceQuestion
-from ...models.preferences import PreferenceProfile, PreferenceValue
+from v2.models.discovery import DomainDiscoveryOutput, PreferenceQuestion
+from v2.models.preferences import PreferenceProfile, PreferenceValue
 
 
 def render_preferences_wizard(

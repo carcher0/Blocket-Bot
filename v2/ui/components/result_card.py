@@ -4,7 +4,7 @@ Result card component - displays ranked listings.
 import streamlit as st
 from typing import Optional
 
-from ...models.scoring import RankedListing
+from v2.models.scoring import RankedListing
 
 
 def render_results_section(results: list[RankedListing]):
@@ -49,6 +49,14 @@ def render_result_card(result: RankedListing):
     # Format price
     price_str = f"{listing.price:,.0f} kr" if listing.price else "Pris saknas"
     
+    # Description preview (first 120 chars)
+    desc_preview = ""
+    if listing.description:
+        desc_text = listing.description[:120]
+        if len(listing.description) > 120:
+            desc_text += "..."
+        desc_preview = f'<div class="description-preview">{desc_text}</div>'
+    
     # Card HTML
     card_html = f"""
     <div class="result-card">
@@ -56,14 +64,18 @@ def render_result_card(result: RankedListing):
             <span class="rank">#{result.rank}</span>
             <span class="score-badge {score_class}">{scores.total:.0f} poäng</span>
         </div>
-        <div class="title">{listing.title or 'Utan titel'}</div>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <a href="{listing.url}" target="_blank" class="title" style="text-decoration: none; color: inherit;">
+            {listing.title or 'Utan titel'}
+        </a>
+        {desc_preview}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
             <span class="price">{price_str}</span>
             <span class="location">📍 {listing.location or 'Okänd plats'}</span>
         </div>
         <div style="margin-top: 0.5rem;">
             {tags_html}
         </div>
+        <a href="{listing.url}" target="_blank" style="color: var(--primary); font-size: 0.85rem;">🔗 Öppna på Blocket</a>
     </div>
     """
     
@@ -130,18 +142,9 @@ def render_card_details(result: RankedListing):
     # Seller questions
     if enrichment.seller_questions:
         st.markdown("**💬 Frågor att ställa säljaren:**")
-        for q in enrichment.seller_questions:
-            st.markdown(f"""
-            <div class="seller-question">
-                <div class="question-text">"{q.question}"</div>
-            </div>
-            """, unsafe_allow_html=True)
-            # Copy button
-            st.button(
-                "📋 Kopiera",
-                key=f"copy_{result.listing.listing_id}_{q.relates_to}",
-                on_click=lambda text=q.question: st.toast(f"Kopierat: {text[:30]}..."),
-            )
+        for idx, q in enumerate(enrichment.seller_questions):
+            # Use st.code for easy copy-paste
+            st.code(q.question, language=None)
     
     # Link to original
     st.markdown(f"[🔗 Visa på Blocket]({listing.url})")

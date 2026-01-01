@@ -26,6 +26,12 @@ Your task is to analyze a sample of listings and determine:
 2. What attributes are important for evaluating and comparing items in this domain
 3. What questions should be asked to help buyers find the best match
 
+CRITICAL: CONFIDENCE AND CLARIFICATION
+- You MUST provide a confidence score (0.0-1.0) for your domain inference.
+- Be HONEST about uncertainty. If the search term is ambiguous (like "4080" which could mean GPU or something else), set confidence LOW (< 0.7).
+- If confidence < 0.7, you MUST provide a clarifying_question and clarifying_options to ask the user what they meant.
+  - Example: For "4080", ask "Vad menar du med '4080'?" with options ["RTX 4080 grafikkort", "Modellnummer för annan produkt", "Annat"]
+
 Analyze the listing texts carefully. Look for:
 - Common attributes mentioned (size, condition, specifications, etc.)
 - Terms that indicate quality or value
@@ -34,10 +40,10 @@ Analyze the listing texts carefully. Look for:
 
 Return structured JSON following the exact schema provided.
 Be specific to this domain - don't use generic attributes if domain-specific ones apply.
-Use Swedish for user-facing text (question_text, display_name, etc.)."""
+Use Swedish for user-facing text (question_text, display_name, clarifying_question, etc.)."""
 
 
-DISCOVERY_USER_PROMPT_TEMPLATE = """Analyze these {count} listings and generate a domain schema:
+DISCOVERY_USER_PROMPT_TEMPLATE = """Analyze these {count} listings for the search query.
 
 Sample listing titles:
 {titles}
@@ -48,10 +54,21 @@ Sample descriptions (if available):
 Sample prices: {prices}
 
 Based on this data, generate a complete DomainDiscoveryOutput with:
-1. inferred_domain: What product type this is (be specific)
+1. inferred_domain: 
+   - domain_label: What product type this is (be specific, e.g. "grafikkort", "smartphone", "cykel")
+   - confidence: 0.0-1.0 (BE HONEST - if uncertain, use lower values)
+   - subcategory: More specific if applicable
+   - clarifying_question: REQUIRED if confidence < 0.7 (ask in Swedish what the user meant)
+   - clarifying_options: 3-5 options for what they might mean (in Swedish)
+
 2. attribute_candidates: 5-10 relevant attributes for this domain
+
 3. preference_questions: 4-8 questions to ask the buyer (in Swedish)
+
 4. domain_risk_notes: What to watch out for in this domain
+
+IMPORTANT: If listings seem to be about different types of products (mixed results), 
+set confidence LOW and ASK for clarification.
 
 Return JSON matching this schema:
 {schema}"""
@@ -86,17 +103,25 @@ class DomainDiscoveryService:
             return DEFAULT_GENERIC_SCHEMA
 
         if not self.llm.is_available():
-            logger.warning("LLM not available, using generic schema")
+            logger.warning("LLM not available (no API key?), using generic schema")
             return DEFAULT_GENERIC_SCHEMA
 
         # Sample listings
         sample = listings[:sample_size]
         logger.info(f"Analyzing {len(sample)} listings for domain discovery")
+        
+        # Log sample titles for debugging
+        sample_titles = [l.title for l in sample[:5] if l.title]
+        logger.info(f"Sample titles: {sample_titles}")
 
         try:
-            return self._run_discovery(sample)
+            result = self._run_discovery(sample)
+            logger.info(f"Discovery succeeded: domain='{result.inferred_domain.domain_label}' confidence={result.inferred_domain.confidence:.2f}")
+            return result
         except Exception as e:
-            logger.error(f"Discovery failed: {e}")
+            logger.error(f"Discovery failed with error: {type(e).__name__}: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return DEFAULT_GENERIC_SCHEMA
 
     def _run_discovery(

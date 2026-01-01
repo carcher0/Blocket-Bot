@@ -169,8 +169,13 @@ class BlocketClient:
             if not listing_id:
                 return None
 
-            url = raw.get("url") or f"https://www.blocket.se/annons/{listing_id}"
-            title = raw.get("title") or raw.get("subject") or ""
+            url = raw.get("share_url") or raw.get("url")
+            if not url:
+                # Construct proper Blocket URL
+                url = f"https://www.blocket.se/annons/{listing_id}"
+            
+            # Title: Blocket API uses 'subject' field
+            title = raw.get("subject") or raw.get("title") or raw.get("heading") or ""
             
             # Price extraction
             price = None
@@ -216,8 +221,14 @@ class BlocketClient:
             else:
                 image_count = 1 if images else 0
 
-            # Description (may need separate fetch)
-            description = raw.get("description") or raw.get("body") or None
+            # Description - try multiple fields
+            description = (
+                raw.get("body") 
+                or raw.get("description") 
+                or raw.get("text")
+                or raw.get("content")
+                or None
+            )
 
             return NormalizedListing(
                 listing_id=listing_id,

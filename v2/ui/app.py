@@ -3,23 +3,31 @@ Blocket Bot 2.0 - Modern Purchase Assistant
 
 A professional Streamlit UI with Blocket-inspired design.
 """
+import sys
+from pathlib import Path
+
+# Add project root to path for imports when running via streamlit
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from datetime import datetime
 from typing import Optional
 
-from ..config import get_config
-from ..client import BlocketClient
-from ..models.preferences import PreferenceProfile, PreferenceValue
-from ..models.discovery import DomainDiscoveryOutput, DEFAULT_GENERIC_SCHEMA
-from ..pipeline import run_pipeline
-from ..ai import DomainDiscoveryService
+from v2.config import get_config
+from v2.client import BlocketClient
+from v2.models.preferences import PreferenceProfile, PreferenceValue
+from v2.models.discovery import DomainDiscoveryOutput, DEFAULT_GENERIC_SCHEMA
+from v2.pipeline import run_pipeline
+from v2.ai import DomainDiscoveryService
 
-from .styles import inject_custom_css
-from .components.search_input import render_search_section
-from .components.preference_form import render_preferences_wizard
-from .components.result_card import render_results_section
-from .components.detail_panel import render_detail_panel
-from .components.debug_panel import render_debug_panel
+from v2.ui.styles import inject_custom_css
+from v2.ui.components.search_input import render_search_section
+from v2.ui.components.preference_form import render_preferences_wizard
+from v2.ui.components.result_card import render_results_section
+from v2.ui.components.detail_panel import render_detail_panel
+from v2.ui.components.debug_panel import render_debug_panel
 
 
 def init_session_state():
@@ -69,6 +77,8 @@ def main():
     
     if step == "search":
         render_search_step()
+    elif step == "clarify":
+        render_clarification_step()
     elif step == "preferences":
         render_preferences_step()
     elif step == "results":
@@ -121,7 +131,7 @@ def render_search_step():
                             query=query,
                             locations=filters.get("locations"),
                             sort_order=filters.get("sort_order"),
-                            max_pages=5,
+                            max_pages=10,  # Get more listings for better coverage
                         )
                         st.session_state.listings = listings
                         st.session_state.user_query = query
@@ -136,7 +146,11 @@ def render_search_step():
                                 schema = discovery.discover(listings)
                                 st.session_state.schema = schema
                             
-                            st.session_state.step = "preferences"
+                            # Check if we need clarification
+                            if schema.inferred_domain.needs_clarification:
+                                st.session_state.step = "clarify"
+                            else:
+                                st.session_state.step = "preferences"
                             st.rerun()
                         else:
                             st.warning("Inga annonser hittades. Prova en annan sökning.")
@@ -144,6 +158,75 @@ def render_search_step():
                         st.error(f"Sökning misslyckades: {e}")
             else:
                 st.warning("Skriv in vad du söker efter")
+
+
+def render_clarification_step():
+    """Render the clarification step when AI is uncertain about product type."""
+    schema = st.session_state.schema
+    domain = schema.inferred_domain
+    
+    st.markdown("### ❓ Förtydligande behövs")
+    
+    # Show what we detected
+    st.markdown(f"""
+    <div class="domain-badge" style="border-color: orange;">
+        <span style="color: orange;">⚠️ Osäker identifiering</span>
+        <span class="confidence">({domain.confidence*100:.0f}% konfidens)</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"AI:n är osäker på vad du menar med **'{st.session_state.user_query}'**.")
+    
+    # Show the clarifying question
+    if domain.clarifying_question:
+        st.markdown(f"**{domain.clarifying_question}**")
+        
+        # Show options as radio buttons
+        options = domain.clarifying_options if domain.clarifying_options else ["Grafikkort", "Processor", "Annan produkt"]
+        options.append("Annat (skriv själv)")
+        
+        selected = st.radio(
+            "Välj vad du letar efter:",
+            options=options,
+            key="clarify_selection",
+            label_visibility="collapsed",
+        )
+        
+        # If "Annat" selected, show text input
+        if selected == "Annat (skriv själv)":
+            custom_type = st.text_input(
+                "Beskriv produkten:",
+                key="clarify_custom",
+            )
+            selected = custom_type if custom_type else None
+    else:
+        # Fallback if no question was provided
+        selected = st.text_input(
+            "Vad för typ av produkt letar du efter?",
+            placeholder="T.ex. grafikkort, mobiltelefon, cykel...",
+            key="clarify_input",
+        )
+    
+    # Navigation
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        if st.button("← Tillbaka", use_container_width=True):
+            st.session_state.step = "search"
+            st.rerun()
+    
+    with col3:
+        if st.button("Fortsätt →", type="primary", use_container_width=True, disabled=not selected):
+            if selected and selected != "Annat (skriv själv)":
+                # Update the domain with user's clarification
+                schema.inferred_domain.domain_label = selected.lower()
+                schema.inferred_domain.confidence = 1.0  # User confirmed
+                schema.inferred_domain.clarifying_question = None  # No longer needs clarification
+                st.session_state.schema = schema
+                st.session_state.step = "preferences"
+                st.rerun()
+            else:
+                st.warning("Välj eller skriv in vad du letar efter")
 
 
 def render_preferences_step():
